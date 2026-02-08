@@ -16,7 +16,7 @@ Built on Cloudflare Workers with Hono, using x402 payment protocol for paid endp
 | Framework | Hono |
 | Platform | Cloudflare Workers |
 | Language | TypeScript |
-| Payments | x402 (STX micropayments) |
+| Payments | x402 (STX or sBTC micropayments) |
 
 ## Features
 
@@ -47,7 +47,7 @@ Built on Cloudflare Workers with Hono, using x402 payment protocol for paid endp
 | `POST /simulate` | 5000 uSTX | Position simulation before execution |
 | `POST /agent-intel` | 5000 uSTX | Batch intelligence for autonomous agents |
 
-Paid endpoints require `X-Payment` header with transaction ID.
+Paid endpoints require `X-Payment` header with transaction ID. Supports both STX and sBTC payments.
 
 ## Quick Start
 
@@ -64,12 +64,21 @@ bun run deploy
 
 ## Payment Integration
 
-Paid endpoints use x402 protocol via the payment contract:
+Paid endpoints use x402 protocol and accept both STX and sBTC:
 
+### STX Payment
 ```
 Contract: SPP5ZMH9NQDFD2K5CEQZ6P02AP8YPWMQ75TJW20M.simple-oracle
 Function: call-with-stx
 ```
+
+### sBTC Payment
+Use query param `?tokenType=sBTC` or header `X-PAYMENT-TOKEN-TYPE: sBTC` to pay with sBTC.
+
+| Endpoint | STX Price | sBTC Price |
+|----------|-----------|------------|
+| Standard endpoints | 2000 uSTX | 2 sats |
+| Premium endpoints | 5000 uSTX | 5 sats |
 
 Include the payment transaction ID in the `X-Payment` header.
 

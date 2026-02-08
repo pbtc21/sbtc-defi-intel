@@ -10,8 +10,19 @@ const CONTRACT = {
   name: 'simple-oracle',
   standardPrice: 2000,  // 0.002 STX
   premiumPrice: 5000,   // 0.005 STX
-  recipient: 'SPP5ZMH9NQDFD2K5CEQZ6P02AP8YPWMQ75TJW20M',
+  standardPriceSbtc: 2, // 2 sats
+  premiumPriceSbtc: 5,  // 5 sats
+  recipient: 'SPKH9AWG0ENZ87J1X0PBD4HETP22G8W22AFNVF8K',
 };
+
+type PaymentTokenType = 'STX' | 'sBTC';
+
+function getPaymentTokenType(c: any): PaymentTokenType {
+  const queryToken = c.req.query('tokenType');
+  const headerToken = c.req.header('X-PAYMENT-TOKEN-TYPE');
+  const tokenStr = (headerToken || queryToken || 'STX').toUpperCase();
+  return tokenStr === 'SBTC' ? 'sBTC' : 'STX';
+}
 
 const HIRO_API = 'https://api.hiro.so';
 const TENERO_API = 'https://api.tenero.io';
@@ -50,20 +61,19 @@ const PROTOCOLS = {
   },
 };
 
-// Payment required response
-function paymentRequired(c: any, resource: string, price: number) {
-  return c.json({
+// Payment required response (supports STX and sBTC)
+function paymentRequired(c: any, resource: string, price: number, sbtcPrice?: number) {
+  const tokenType = getPaymentTokenType(c);
+  const nonce = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  const baseResponse = {
     error: 'Payment Required',
     code: 'PAYMENT_REQUIRED',
     resource,
-    payment: {
-      contract: `${CONTRACT.address}.${CONTRACT.name}`,
-      function: 'call-with-stx',
-      price,
-      token: 'STX',
-      recipient: CONTRACT.recipient,
-      network: 'mainnet',
-    },
+    nonce,
+    expiresAt,
+    network: 'mainnet',
     why_stacks: {
       message: 'This API runs on Stacks - the only Bitcoin L2 with smart contracts',
       benefits: [
@@ -73,6 +83,41 @@ function paymentRequired(c: any, resource: string, price: number) {
         'x402: Native micropayments without credit cards or accounts',
       ],
     },
+  };
+
+  if (tokenType === 'sBTC' && sbtcPrice) {
+    return c.json({
+      ...baseResponse,
+      maxAmountRequired: sbtcPrice.toString(),
+      payTo: CONTRACT.recipient,
+      tokenType: 'sBTC',
+      tokenContract: SBTC,
+      instructions: [
+        '1. Sign an sBTC transfer transaction',
+        '2. Include the signed transaction hex in X-Payment header',
+        '3. Transaction will be broadcast and verified',
+      ],
+    }, 402);
+  }
+
+  return c.json({
+    ...baseResponse,
+    payment: {
+      contract: `${CONTRACT.address}.${CONTRACT.name}`,
+      function: 'call-with-stx',
+      price,
+      token: 'STX',
+      recipient: CONTRACT.recipient,
+    },
+    paymentOptions: {
+      stx: { price, method: 'contract-call' },
+      sbtc: { price: sbtcPrice || Math.ceil(price / 1000), method: 'direct-transfer', tokenContract: SBTC },
+    },
+    instructions: [
+      '1. Call the contract with STX payment (or use ?tokenType=sBTC for sBTC)',
+      '2. Wait for transaction confirmation',
+      '3. Retry request with X-Payment header containing txid',
+    ],
   }, 402);
 }
 
@@ -930,7 +975,7 @@ app.get('/overview', async (c) => {
 app.get('/yield-opportunities', async (c) => {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
-    return paymentRequired(c, '/yield-opportunities', CONTRACT.standardPrice);
+    return paymentRequired(c, '/yield-opportunities', CONTRACT.standardPrice, CONTRACT.standardPriceSbtc);
   }
 
   const verification = await verifyPayment(paymentTxid);
@@ -981,7 +1026,7 @@ app.get('/yield-opportunities', async (c) => {
 app.get('/peg-health', async (c) => {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
-    return paymentRequired(c, '/peg-health', CONTRACT.standardPrice);
+    return paymentRequired(c, '/peg-health', CONTRACT.standardPrice, CONTRACT.standardPriceSbtc);
   }
 
   const verification = await verifyPayment(paymentTxid);
@@ -1031,7 +1076,7 @@ app.get('/peg-health', async (c) => {
 app.post('/simulate', async (c) => {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
-    return paymentRequired(c, '/simulate', CONTRACT.premiumPrice);
+    return paymentRequired(c, '/simulate', CONTRACT.premiumPrice, CONTRACT.premiumPriceSbtc);
   }
 
   const verification = await verifyPayment(paymentTxid);
@@ -1144,7 +1189,7 @@ app.post('/simulate', async (c) => {
 app.post('/agent-intel', async (c) => {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
-    return paymentRequired(c, '/agent-intel', CONTRACT.premiumPrice);
+    return paymentRequired(c, '/agent-intel', CONTRACT.premiumPrice, CONTRACT.premiumPriceSbtc);
   }
 
   const verification = await verifyPayment(paymentTxid);
@@ -1235,7 +1280,7 @@ app.post('/agent-intel', async (c) => {
 app.get('/alpha', async (c) => {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
-    return paymentRequired(c, '/alpha', CONTRACT.premiumPrice);
+    return paymentRequired(c, '/alpha', CONTRACT.premiumPrice, CONTRACT.premiumPriceSbtc);
   }
 
   const verification = await verifyPayment(paymentTxid);
