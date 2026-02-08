@@ -971,8 +971,81 @@ app.get('/overview', async (c) => {
   });
 });
 
-// Paid: Yield opportunities
-app.get('/yield-opportunities', async (c) => {
+// x402 Discovery: Yield opportunities
+app.get('/yield-opportunities', (c) => {
+  const accept = c.req.header('Accept') || '';
+  if (accept.includes('application/json') && !c.req.header('X-Payment')) {
+    // Check if this is a discovery request (no payment header, asking for JSON)
+    const hasPaymentQuery = c.req.query('discover') === 'x402';
+    if (hasPaymentQuery || c.req.header('X-402-Discovery') === 'true') {
+      return c.json({
+        x402Version: 1,
+        name: 'sBTC DeFi Intelligence - Yield Opportunities',
+        image: 'https://sbtc-defi-intel.p-d07.workers.dev/icon.png',
+        accepts: [
+          {
+            scheme: 'exact',
+            network: 'stacks',
+            maxAmountRequired: CONTRACT.standardPrice.toString(),
+            resource: '/yield-opportunities',
+            description: 'All sBTC yield sources with APY, risk ratings, TVL, and protocol details. Updated in real-time.',
+            mimeType: 'application/json',
+            payTo: CONTRACT.recipient,
+            maxTimeoutSeconds: 300,
+            asset: 'STX',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                timestamp: { type: 'string' },
+                paymentVerified: { type: 'boolean' },
+                caller: { type: 'string' },
+                sbtcPrice: { type: 'number' },
+                opportunities: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      protocol: { type: 'string' },
+                      type: { type: 'string' },
+                      description: { type: 'string' },
+                      metrics: { type: 'object' },
+                      risk: { type: 'object' }
+                    }
+                  }
+                },
+                summary: { type: 'object' }
+              }
+            }
+          },
+          {
+            scheme: 'exact',
+            network: 'stacks',
+            maxAmountRequired: CONTRACT.standardPriceSbtc.toString(),
+            resource: '/yield-opportunities',
+            description: 'All sBTC yield sources with APY, risk ratings, TVL, and protocol details. Updated in real-time.',
+            mimeType: 'application/json',
+            payTo: CONTRACT.recipient,
+            maxTimeoutSeconds: 300,
+            asset: 'sBTC',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                timestamp: { type: 'string' },
+                paymentVerified: { type: 'boolean' },
+                opportunities: { type: 'array' },
+                summary: { type: 'object' }
+              }
+            }
+          }
+        ]
+      });
+    }
+  }
+  return handleYieldOpportunities(c);
+});
+
+// Paid: Yield opportunities handler
+async function handleYieldOpportunities(c: any) {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
     return paymentRequired(c, '/yield-opportunities', CONTRACT.standardPrice, CONTRACT.standardPriceSbtc);
@@ -1020,10 +1093,80 @@ app.get('/yield-opportunities', async (c) => {
       lowestRisk: protocols.filter(p => p.riskLevel === 'low').map(p => p.protocol),
     },
   });
+}
+
+// x402 Discovery: Peg health
+app.get('/peg-health', (c) => {
+  const accept = c.req.header('Accept') || '';
+  if (accept.includes('application/json') && !c.req.header('X-Payment')) {
+    const hasPaymentQuery = c.req.query('discover') === 'x402';
+    if (hasPaymentQuery || c.req.header('X-402-Discovery') === 'true') {
+      return c.json({
+        x402Version: 1,
+        name: 'sBTC DeFi Intelligence - Peg Health',
+        image: 'https://sbtc-defi-intel.p-d07.workers.dev/icon.png',
+        accepts: [
+          {
+            scheme: 'exact',
+            network: 'stacks',
+            maxAmountRequired: CONTRACT.standardPrice.toString(),
+            resource: '/peg-health',
+            description: 'sBTC peg analysis - ratio, spread, confidence score. Detect arbitrage opportunities.',
+            mimeType: 'application/json',
+            payTo: CONTRACT.recipient,
+            maxTimeoutSeconds: 300,
+            asset: 'STX',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                timestamp: { type: 'string' },
+                paymentVerified: { type: 'boolean' },
+                caller: { type: 'string' },
+                peg: {
+                  type: 'object',
+                  properties: {
+                    status: { type: 'string' },
+                    ratio: { type: 'number' },
+                    spread: { type: 'number' },
+                    spreadFormatted: { type: 'string' },
+                    confidence: { type: 'number' }
+                  }
+                },
+                prices: { type: 'object' },
+                sbtcMetrics: { type: 'object' },
+                analysis: { type: 'string' }
+              }
+            }
+          },
+          {
+            scheme: 'exact',
+            network: 'stacks',
+            maxAmountRequired: CONTRACT.standardPriceSbtc.toString(),
+            resource: '/peg-health',
+            description: 'sBTC peg analysis - ratio, spread, confidence score. Detect arbitrage opportunities.',
+            mimeType: 'application/json',
+            payTo: CONTRACT.recipient,
+            maxTimeoutSeconds: 300,
+            asset: 'sBTC',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                timestamp: { type: 'string' },
+                peg: { type: 'object' },
+                prices: { type: 'object' },
+                analysis: { type: 'string' }
+              }
+            }
+          }
+        ]
+      });
+    }
+  }
+  return handlePegHealth(c);
 });
 
-// Paid: Peg health
-app.get('/peg-health', async (c) => {
+// Paid: Peg health handler
+async function handlePegHealth(c: any) {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
     return paymentRequired(c, '/peg-health', CONTRACT.standardPrice, CONTRACT.standardPriceSbtc);
@@ -1066,6 +1209,92 @@ app.get('/peg-health', async (c) => {
       : pegHealth.spread > 0
         ? `sBTC trading at ${pegHealth.spread.toFixed(2)}% premium. Consider selling sBTC for BTC if unwinding positions.`
         : `sBTC trading at ${Math.abs(pegHealth.spread).toFixed(2)}% discount. Potential arbitrage opportunity - acquire sBTC below BTC spot.`,
+  });
+}
+
+// x402 Discovery: Simulate
+app.get('/simulate', (c) => {
+  return c.json({
+    x402Version: 1,
+    name: 'sBTC DeFi Intelligence - Position Simulator',
+    image: 'https://sbtc-defi-intel.p-d07.workers.dev/icon.png',
+    accepts: [
+      {
+        scheme: 'exact',
+        network: 'stacks',
+        maxAmountRequired: CONTRACT.premiumPrice.toString(),
+        resource: '/simulate',
+        description: 'Simulate sBTC position outcomes BEFORE execution. Preview deposits, borrows, loops, and unwinds with exact results - only possible because Clarity is decidable.',
+        mimeType: 'application/json',
+        payTo: CONTRACT.recipient,
+        maxTimeoutSeconds: 300,
+        asset: 'STX',
+        outputSchema: {
+          type: 'object',
+          properties: {
+            timestamp: { type: 'string' },
+            input: {
+              type: 'object',
+              properties: {
+                action: { type: 'string', enum: ['deposit', 'borrow', 'loop', 'unwind'] },
+                protocol: { type: 'string' },
+                amountBtc: { type: 'number' },
+                leverage: { type: 'number' }
+              }
+            },
+            outcome: { type: 'object' },
+            claritySimulation: {
+              type: 'object',
+              properties: {
+                verified: { type: 'boolean' },
+                method: { type: 'string' },
+                note: { type: 'string' }
+              }
+            }
+          }
+        },
+        inputSchema: {
+          type: 'object',
+          required: ['action', 'protocol', 'amountBtc'],
+          properties: {
+            action: { type: 'string', enum: ['deposit', 'borrow', 'loop', 'unwind'] },
+            protocol: { type: 'string', description: 'Protocol name (e.g., Zest, ALEX, Velar)' },
+            amountBtc: { type: 'number', description: 'Amount of sBTC to simulate' },
+            leverage: { type: 'number', description: 'Leverage multiplier for loop strategy' }
+          }
+        }
+      },
+      {
+        scheme: 'exact',
+        network: 'stacks',
+        maxAmountRequired: CONTRACT.premiumPriceSbtc.toString(),
+        resource: '/simulate',
+        description: 'Simulate sBTC position outcomes BEFORE execution. Preview deposits, borrows, loops, and unwinds with exact results.',
+        mimeType: 'application/json',
+        payTo: CONTRACT.recipient,
+        maxTimeoutSeconds: 300,
+        asset: 'sBTC',
+        outputSchema: {
+          type: 'object',
+          properties: {
+            timestamp: { type: 'string' },
+            input: { type: 'object' },
+            outcome: { type: 'object' },
+            claritySimulation: { type: 'object' }
+          }
+        },
+        inputSchema: {
+          type: 'object',
+          required: ['action', 'protocol', 'amountBtc'],
+          properties: {
+            action: { type: 'string', enum: ['deposit', 'borrow', 'loop', 'unwind'] },
+            protocol: { type: 'string' },
+            amountBtc: { type: 'number' },
+            leverage: { type: 'number' }
+          }
+        }
+      }
+    ]
   });
 });
 
@@ -1185,6 +1414,101 @@ app.post('/simulate', async (c) => {
   return c.json(simulation);
 });
 
+// x402 Discovery: Agent Intel
+app.get('/agent-intel', (c) => {
+  return c.json({
+    x402Version: 1,
+    name: 'sBTC DeFi Intelligence - Agent Intel',
+    image: 'https://sbtc-defi-intel.p-d07.workers.dev/icon.png',
+    accepts: [
+      {
+        scheme: 'exact',
+        network: 'stacks',
+        maxAmountRequired: CONTRACT.premiumPrice.toString(),
+        resource: '/agent-intel',
+        description: 'Batch intelligence for autonomous trading agents. Get optimal sBTC allocation strategy based on risk tolerance and capital.',
+        mimeType: 'application/json',
+        payTo: CONTRACT.recipient,
+        maxTimeoutSeconds: 300,
+        asset: 'STX',
+        outputSchema: {
+          type: 'object',
+          properties: {
+            timestamp: { type: 'string' },
+            paymentVerified: { type: 'boolean' },
+            agentId: { type: 'string' },
+            input: { type: 'object' },
+            market: {
+              type: 'object',
+              properties: {
+                btcPrice: { type: 'number' },
+                sbtcPegStatus: { type: 'string' },
+                sbtcSpread: { type: 'number' }
+              }
+            },
+            strategy: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                allocations: { type: 'array' },
+                projectedApy: { type: 'string' },
+                projectedYearlyBtc: { type: 'string' },
+                projectedYearlyUsd: { type: 'string' }
+              }
+            },
+            execution: {
+              type: 'object',
+              properties: {
+                actions: { type: 'array' },
+                estimatedGas: { type: 'string' }
+              }
+            }
+          }
+        },
+        inputSchema: {
+          type: 'object',
+          required: ['riskTolerance', 'capitalBtc'],
+          properties: {
+            wallet: { type: 'string', description: 'Optional wallet address for personalized analysis' },
+            riskTolerance: { type: 'string', enum: ['conservative', 'moderate', 'aggressive'] },
+            capitalBtc: { type: 'number', description: 'Amount of sBTC capital to allocate' }
+          }
+        }
+      },
+      {
+        scheme: 'exact',
+        network: 'stacks',
+        maxAmountRequired: CONTRACT.premiumPriceSbtc.toString(),
+        resource: '/agent-intel',
+        description: 'Batch intelligence for autonomous trading agents. Get optimal sBTC allocation strategy based on risk tolerance and capital.',
+        mimeType: 'application/json',
+        payTo: CONTRACT.recipient,
+        maxTimeoutSeconds: 300,
+        asset: 'sBTC',
+        outputSchema: {
+          type: 'object',
+          properties: {
+            timestamp: { type: 'string' },
+            agentId: { type: 'string' },
+            market: { type: 'object' },
+            strategy: { type: 'object' },
+            execution: { type: 'object' }
+          }
+        },
+        inputSchema: {
+          type: 'object',
+          required: ['riskTolerance', 'capitalBtc'],
+          properties: {
+            wallet: { type: 'string' },
+            riskTolerance: { type: 'string', enum: ['conservative', 'moderate', 'aggressive'] },
+            capitalBtc: { type: 'number' }
+          }
+        }
+      }
+    ]
+  });
+});
+
 // Agent-optimized: Batch intelligence for autonomous trading
 app.post('/agent-intel', async (c) => {
   const paymentTxid = c.req.header('X-Payment');
@@ -1276,8 +1600,90 @@ app.post('/agent-intel', async (c) => {
   });
 });
 
-// Paid: Alpha signals
-app.get('/alpha', async (c) => {
+// x402 Discovery: Alpha signals
+app.get('/alpha', (c) => {
+  const accept = c.req.header('Accept') || '';
+  if (accept.includes('application/json') && !c.req.header('X-Payment')) {
+    const hasPaymentQuery = c.req.query('discover') === 'x402';
+    if (hasPaymentQuery || c.req.header('X-402-Discovery') === 'true') {
+      return c.json({
+        x402Version: 1,
+        name: 'sBTC DeFi Intelligence - Alpha Signals',
+        image: 'https://sbtc-defi-intel.p-d07.workers.dev/icon.png',
+        accepts: [
+          {
+            scheme: 'exact',
+            network: 'stacks',
+            maxAmountRequired: CONTRACT.premiumPrice.toString(),
+            resource: '/alpha',
+            description: 'Actionable intelligence - yield rotations, peg arbitrage, risk warnings. Institutional-grade signals for sBTC DeFi.',
+            mimeType: 'application/json',
+            payTo: CONTRACT.recipient,
+            maxTimeoutSeconds: 300,
+            asset: 'STX',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                timestamp: { type: 'string' },
+                paymentVerified: { type: 'boolean' },
+                caller: { type: 'string' },
+                marketSnapshot: {
+                  type: 'object',
+                  properties: {
+                    btcPrice: { type: 'number' },
+                    sbtcPrice: { type: 'number' },
+                    pegStatus: { type: 'string' },
+                    totalTvl: { type: 'number' },
+                    sbtcSupply: { type: 'number' }
+                  }
+                },
+                signals: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      signal: { type: 'string' },
+                      type: { type: 'string', enum: ['opportunity', 'warning', 'info'] },
+                      confidence: { type: 'number' },
+                      action: { type: 'string' },
+                      details: { type: 'string' }
+                    }
+                  }
+                },
+                signalSummary: { type: 'object' },
+                recommendation: { type: 'string' }
+              }
+            }
+          },
+          {
+            scheme: 'exact',
+            network: 'stacks',
+            maxAmountRequired: CONTRACT.premiumPriceSbtc.toString(),
+            resource: '/alpha',
+            description: 'Actionable intelligence - yield rotations, peg arbitrage, risk warnings. Institutional-grade signals for sBTC DeFi.',
+            mimeType: 'application/json',
+            payTo: CONTRACT.recipient,
+            maxTimeoutSeconds: 300,
+            asset: 'sBTC',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                timestamp: { type: 'string' },
+                marketSnapshot: { type: 'object' },
+                signals: { type: 'array' },
+                recommendation: { type: 'string' }
+              }
+            }
+          }
+        ]
+      });
+    }
+  }
+  return handleAlpha(c);
+});
+
+// Paid: Alpha signals handler
+async function handleAlpha(c: any) {
   const paymentTxid = c.req.header('X-Payment');
   if (!paymentTxid) {
     return paymentRequired(c, '/alpha', CONTRACT.premiumPrice, CONTRACT.premiumPriceSbtc);
@@ -1316,6 +1722,6 @@ app.get('/alpha', async (c) => {
     recommendation: signals.find(s => s.type === 'opportunity')?.action || 'No immediate opportunities detected',
     disclaimer: 'Signals are algorithmic and should not be considered financial advice. Always DYOR.',
   });
-});
+}
 
 export default app;
